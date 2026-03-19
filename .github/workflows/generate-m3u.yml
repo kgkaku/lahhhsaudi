@@ -2,16 +2,18 @@ name: Generate Saudi Channels M3U Playlist
 
 on:
   schedule:
-    # Run every 6 hours (at minute 0 of every 6th hour)
-    - cron: '0 */6 * * *'
-  workflow_dispatch:  # Allow manual trigger
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:        # Manual trigger
   push:
     branches: [ main ]
     paths:
       - 'scripts/**'
       - '.github/workflows/**'
 
-# Set permissions for GitHub Pages
+# Set environment variable to test Node.js 24 compatibility early
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
   pages: write
@@ -37,43 +39,35 @@ jobs:
         pip install -r scripts/requirements.txt
         
     - name: Generate M3U playlist
+      id: generate
       run: |
         python scripts/generate_m3u.py
       env:
-        # You can use secrets for tokens if they need to be kept private
         CHANNEL_TOKEN: ${{ secrets.CHANNEL_TOKEN }}
         
-    - name: Create deployment directory
+    - name: Verify output
       run: |
-        mkdir -p deployment
-        cp output/saudi_channels.m3u deployment/
-        cp output/stream_urls.txt deployment/
+        if [ ! -f output/saudi_channels.m3u ]; then
+          echo "❌ M3U file was not generated!"
+          exit 1
+        fi
+        echo "✅ M3U file generated successfully"
+        ls -la output/
         
     - name: Deploy to GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
+      uses: peaceiris/actions-gh-pages@v4  # Updated to v4 for better Node compatibility
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./deployment
+        publish_dir: ./output
         publish_branch: gh-pages
         keep_files: false
         user_name: 'github-actions[bot]'
         user_email: 'github-actions[bot]@users.noreply.github.com'
         commit_message: 'Update M3U playlist [skip ci]'
         
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
-      if: github.event_name == 'push' && contains(github.ref, 'tags')
-      with:
-        files: |
-          output/saudi_channels.m3u
-          output/stream_urls.txt
-        generate_release_notes: true
-        
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: saudi-channels-m3u
-        path: |
-          output/
-          !output/**/*.gitkeep
+        path: output/
         retention-days: 7
